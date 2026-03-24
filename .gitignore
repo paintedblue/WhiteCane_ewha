@@ -1,0 +1,26 @@
+# Flutter
+frontend/whitecane/.dart_tool/
+frontend/whitecane/.flutter-plugins
+frontend/whitecane/.flutter-plugins-dependencies
+frontend/whitecane/build/
+frontend/whitecane/.packages
+frontend/whitecane/pubspec.lock
+frontend/whitecane/lib/**/*.g.dart
+frontend/whitecane/.env
+
+# Android
+frontend/whitecane/android/.gradle
+frontend/whitecane/android/local.properties
+frontend/whitecane/android/key.properties
+
+# iOS
+frontend/whitecane/ios/Pods/
+frontend/whitecane/ios/.symlinks/
+
+# Rust
+backend/rust_server/target/
+backend/rust_server/.env
+
+# General
+.DS_Store
+*.log
