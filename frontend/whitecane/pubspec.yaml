@@ -9,11 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_naver_map: ^1.4.4
   dio: ^5.7.0
   get: ^4.6.6
   get_it: ^8.0.3
-  geolocator: ^10.1.0
-  permission_handler: ^11.0.1
   google_nav_bar: ^5.0.7
   sizing: ^1.1.2
   flutter_dotenv: ^5.2.1

@@ -1,16 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/data/remote/dto/navigation_dto.dart';
 import 'package:whitecane/domain/model/place.dart';
 import 'package:whitecane/presentation/common/route_finder_modal.dart';
 
-/// 지도 컴포넌트
-///
-/// TODO: 지도 API 연동 시 이 컴포넌트 내부의 _MapPlaceholder를 실제 지도 위젯으로 교체하세요.
-/// 현재 위치 버튼, 마커 관리, 경로 표시 등의 메서드 시그니처는 유지하면서
-/// 지도 API에 맞게 구현을 채워넣으면 됩니다.
 class MapComponent extends StatefulWidget {
   final NavigationApi navigationApi;
   final String baseUrl;
@@ -26,80 +20,112 @@ class MapComponent extends StatefulWidget {
 }
 
 class MapComponentState extends State<MapComponent> {
-  // 현재 선택된 장소 정보 (마커 표시용)
-  Place? _selectedPlace;
-  CoordinateDto? _currentLocation;
-  List<CoordinateDto> _routeCoordinates = [];
-  CoordinateDto? _routeDestination;
+  NaverMapController? _mapController;
 
-  /// 장소 선택 시 지도 포커스 이동 및 마커 표시
+  static const _routeOverlayId = 'route';
+  static const _destinationMarkerId = 'destination';
+
+  void _onMapReady(NaverMapController controller) {
+    _mapController = controller;
+  }
+
+  /// 검색 결과에서 장소 선택 시 지도 포커스 및 상세 시트 표시
   Future<void> focusOnPlace(Place place) async {
     try {
-      final coordinate =
+      final coord =
           await widget.navigationApi.getNodePolygonCoordinates(place.nodeId);
-      setState(() {
-        _selectedPlace = place;
-        _routeCoordinates = [];
-        _routeDestination = null;
-      });
+      final latLng = NLatLng(coord.latitude, coord.longitude);
 
-      // TODO: 지도 API 연동 시 카메라 이동 구현
-      // mapController.animateTo(coordinate.latitude, coordinate.longitude, zoom: 16.0);
+      // 기존 목적지 마커 제거 후 새 마커 추가
+      await _mapController?.deleteOverlay(
+          NOverlayInfo(type: NOverlayType.marker, id: _destinationMarkerId));
+      final marker = NMarker(id: _destinationMarkerId, position: latLng);
+      await _mapController?.addOverlay(marker);
 
-      _showPlaceDetailSheet(place, coordinate);
+      // 해당 위치로 카메라 이동
+      await _mapController?.updateCamera(
+        NCameraUpdate.scrollAndZoomTo(target: latLng, zoom: 17)
+          ..setAnimation(
+              animation: NCameraAnimation.easing,
+              duration: const Duration(milliseconds: 500)),
+      );
+
+      if (mounted) _showPlaceDetailSheet(place, coord);
     } catch (e) {
       debugPrint('장소 포커스 실패: $e');
     }
   }
 
-  /// 마커 추가
-  void addMarkers(List<dynamic> items, String category) {
-    // TODO: 지도 API 연동 시 마커 표시 구현
-    setState(() {});
-  }
+  /// 카테고리 마커 일괄 추가
+  Future<void> addMarkers(List<dynamic> items, String category) async {
+    await _mapController?.clearOverlays(type: NOverlayType.marker);
 
-  /// 마커 초기화
-  void clearMarkers() {
-    setState(() {
-      _selectedPlace = null;
-    });
-    // TODO: 지도 API 연동 시 마커 제거 구현
-  }
+    for (int i = 0; i < items.length; i++) {
+      final item = items[i];
+      try {
+        CoordinateDto coord;
+        String label = '';
 
-  /// 경로 지도에 그리기
-  void drawRoute(List<CoordinateDto> route, CoordinateDto destination) {
-    setState(() {
-      _routeCoordinates = route;
-      _routeDestination = destination;
-    });
-    // TODO: 지도 API 연동 시 경로 폴리라인 그리기 구현
-  }
+        if (item is Map && item.containsKey('latitude')) {
+          coord = CoordinateDto(
+            latitude: item['latitude'] as double,
+            longitude: item['longitude'] as double,
+          );
+          label = item['name'] as String? ?? '';
+        } else {
+          continue;
+        }
 
-  /// 현재 위치로 이동
-  Future<void> _moveToCurrentLocation() async {
-    var status = await Permission.location.request();
-    if (status.isPermanentlyDenied) {
-      await openAppSettings();
-      return;
-    }
-    if (!status.isGranted) return;
-
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      setState(() {
-        _currentLocation = CoordinateDto(
-          latitude: position.latitude,
-          longitude: position.longitude,
+        final marker = NMarker(
+          id: '$category-$i',
+          position: NLatLng(coord.latitude, coord.longitude),
         );
-      });
-
-      // TODO: 지도 API 연동 시 카메라 이동 구현
-      // mapController.animateTo(position.latitude, position.longitude, zoom: 16.0);
-    } catch (e) {
-      debugPrint('위치 가져오기 실패: $e');
+        if (label.isNotEmpty) {
+          marker.setCaption(NOverlayCaption(text: label, textSize: 12));
+        }
+        await _mapController?.addOverlay(marker);
+      } catch (e) {
+        debugPrint('마커 추가 실패: $e');
+      }
     }
+  }
+
+  /// 모든 마커/경로 초기화
+  Future<void> clearMarkers() async {
+    await _mapController?.clearOverlays();
+  }
+
+  /// 경로 폴리라인 그리기
+  Future<void> drawRoute(
+      List<CoordinateDto> route, CoordinateDto destination) async {
+    // 기존 경로 레이어 제거
+    await _mapController?.deleteOverlay(
+        NOverlayInfo(type: NOverlayType.polylineOverlay, id: _routeOverlayId));
+
+    // 목적지 마커
+    final destMarker = NMarker(
+      id: _destinationMarkerId,
+      position: NLatLng(destination.latitude, destination.longitude),
+    );
+    await _mapController?.addOverlay(destMarker);
+
+    if (route.length < 2) return;
+
+    final coords =
+        route.map((c) => NLatLng(c.latitude, c.longitude)).toList();
+    final polyline = NPolylineOverlay(
+      id: _routeOverlayId,
+      coords: coords,
+      color: const Color(0xFF3478F6),
+      width: 5,
+    );
+    await _mapController?.addOverlay(polyline);
+
+    // 경로 전체가 보이도록 카메라 맞춤
+    final bounds = NLatLngBounds.from(coords);
+    await _mapController?.updateCamera(
+      NCameraUpdate.fitBounds(bounds, padding: const EdgeInsets.all(60)),
+    );
   }
 
   void _showPlaceDetailSheet(Place place, CoordinateDto coordinate) {
@@ -110,7 +136,6 @@ class MapComponentState extends State<MapComponent> {
       ),
       builder: (context) => _PlaceDetailSheet(
         place: place,
-        coordinate: coordinate,
         onNavigate: () {
           Navigator.pop(context);
           RouteFinderModal.showModal(
@@ -120,9 +145,8 @@ class MapComponentState extends State<MapComponent> {
             ramps: const [],
             onGetCoordinate: (nodeId) =>
                 widget.navigationApi.getNodeCoordinates(nodeId),
-            onRouteDraw: (route, destination) {
-              drawRoute(route, destination);
-            },
+            onRouteDraw: (route, destination) =>
+                drawRoute(route, destination),
           );
         },
       ),
@@ -131,164 +155,38 @@ class MapComponentState extends State<MapComponent> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // ─── 지도 영역 ───────────────────────────────────────────
-        // TODO: 아래 _MapPlaceholder를 실제 지도 위젯으로 교체하세요.
-        // 예시:
-        //   FlutterMap(options: ..., layers: [...])
-        //   GoogleMap(initialCameraPosition: ..., ...)
-        //   MapboxMap(...)
-        _MapPlaceholder(
-          currentLocation: _currentLocation,
-          routeCoordinates: _routeCoordinates,
-          routeDestination: _routeDestination,
-          selectedPlace: _selectedPlace,
+    return NaverMap(
+      options: const NaverMapViewOptions(
+        initialCameraPosition: NCameraPosition(
+          target: NLatLng(37.5666102, 126.9783881), // 기본: 서울 시청
+          zoom: 14,
         ),
-
-        // ─── 현재 위치 버튼 (우측 하단) ──────────────────────────
-        Positioned(
-          bottom: 10,
-          right: 10,
-          child: FloatingActionButton.small(
-            onPressed: _moveToCurrentLocation,
-            backgroundColor: const Color.fromRGBO(136, 181, 197, 1),
-            child: const Icon(Icons.my_location, color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 지도 API 연동 전 사용되는 플레이스홀더 위젯
-class _MapPlaceholder extends StatelessWidget {
-  final CoordinateDto? currentLocation;
-  final List<CoordinateDto> routeCoordinates;
-  final CoordinateDto? routeDestination;
-  final Place? selectedPlace;
-
-  const _MapPlaceholder({
-    this.currentLocation,
-    required this.routeCoordinates,
-    this.routeDestination,
-    this.selectedPlace,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFE8EAF6),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.map, size: 80, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              '지도 API 연동 필요',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'map_component.dart 내\nTODO 주석을 참고하여 연동하세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-            ),
-            if (currentLocation != null) ...[
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2))
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const Text('현재 위치',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(
-                      'lat: ${currentLocation!.latitude.toStringAsFixed(5)}\nlon: ${currentLocation!.longitude.toStringAsFixed(5)}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (selectedPlace != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2))
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const Text('선택된 목적지',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(
-                      selectedPlace!.placeName,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (routeCoordinates.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '경로 좌표 ${routeCoordinates.length}개 수신됨',
-                  style: const TextStyle(fontSize: 12, color: Colors.blue),
-                ),
-              ),
-            ],
-          ],
-        ),
+        locationButtonEnable: true,
+        consumeSymbolTapEvents: false,
+        scaleBarEnable: true,
+        compassEnable: true,
       ),
+      onMapReady: _onMapReady,
+      onMapTapped: (_, __) {},
     );
   }
 }
 
-/// 장소 상세 바텀시트
+// ── 장소 상세 바텀시트 ────────────────────────────────────────────────────────
+
 class _PlaceDetailSheet extends StatelessWidget {
   final Place place;
-  final CoordinateDto coordinate;
   final VoidCallback onNavigate;
 
   const _PlaceDetailSheet({
     required this.place,
-    required this.coordinate,
     required this.onNavigate,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -312,8 +210,7 @@ class _PlaceDetailSheet extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       place.category,
-                      style:
-                          const TextStyle(fontSize: 14, color: Colors.grey),
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -324,26 +221,28 @@ class _PlaceDetailSheet extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (place.alias.isNotEmpty)
+          if (place.alias.isNotEmpty) ...[
+            const SizedBox(height: 8),
             Row(
               children: [
                 const Icon(Icons.location_on, size: 18, color: Colors.red),
                 const SizedBox(width: 4),
                 Expanded(
-                    child: Text(place.alias,
-                        style: const TextStyle(fontSize: 14))),
+                  child: Text(place.alias,
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis),
+                ),
               ],
             ),
+          ],
           if (place.contact.isNotEmpty && place.contact != '없음') ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               children: [
                 const Icon(Icons.phone, size: 18, color: Colors.blue),
                 const SizedBox(width: 4),
                 Text(place.contact,
-                    style:
-                        const TextStyle(fontSize: 14, color: Colors.blue)),
+                    style: const TextStyle(fontSize: 14, color: Colors.blue)),
               ],
             ),
           ],
@@ -356,14 +255,13 @@ class _PlaceDetailSheet extends StatelessWidget {
               label: const Text('경로 안내',
                   style: TextStyle(color: Colors.white, fontSize: 16)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xff3478F6),
+                backgroundColor: const Color(0xFF3478F6),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ),
-          const SizedBox(height: 8),
         ],
       ),
     );
