@@ -11,8 +11,10 @@ import 'di/service_locator.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+  final clientId = dotenv.env['NAVER_MAP_CLIENT_ID'] ?? '';
+  debugPrint('네이버 지도 Client ID: "$clientId"');
   await FlutterNaverMap().init(
-    clientId: dotenv.env['NAVER_MAP_CLIENT_ID'] ?? '',
+    clientId: clientId,
     onAuthFailed: (ex) => debugPrint('네이버 지도 인증 실패: $ex'),
   );
   setupDependencies();

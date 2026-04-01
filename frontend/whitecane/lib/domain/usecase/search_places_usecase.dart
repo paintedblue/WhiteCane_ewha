@@ -8,9 +8,6 @@ class SearchPlacesUseCase {
 
   Future<List<Place>> execute(String query) async {
     if (query.isEmpty) return [];
-    final byName = await repository.searchByName(query);
-    final byCategory = await repository.searchByCategory(query);
-    final unique = {...byName, ...byCategory};
-    return unique.toList();
+    return repository.searchByName(query);
   }
 }

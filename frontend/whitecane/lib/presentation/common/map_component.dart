@@ -3,7 +3,6 @@ import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/data/remote/dto/navigation_dto.dart';
 import 'package:whitecane/domain/model/place.dart';
-import 'package:whitecane/presentation/common/route_finder_modal.dart';
 
 class MapComponent extends StatefulWidget {
   final NavigationApi navigationApi;
@@ -21,6 +20,7 @@ class MapComponent extends StatefulWidget {
 
 class MapComponentState extends State<MapComponent> {
   NaverMapController? _mapController;
+  bool _hasDestinationMarker = false;
 
   static const _routeOverlayId = 'route';
   static const _destinationMarkerId = 'destination';
@@ -32,15 +32,16 @@ class MapComponentState extends State<MapComponent> {
   /// 검색 결과에서 장소 선택 시 지도 포커스 및 상세 시트 표시
   Future<void> focusOnPlace(Place place) async {
     try {
-      final coord =
-          await widget.navigationApi.getNodePolygonCoordinates(place.nodeId);
-      final latLng = NLatLng(coord.latitude, coord.longitude);
+      final latLng = NLatLng(place.latitude, place.longitude);
 
-      // 기존 목적지 마커 제거 후 새 마커 추가
-      await _mapController?.deleteOverlay(
-          NOverlayInfo(type: NOverlayType.marker, id: _destinationMarkerId));
+      // 기존 목적지 마커가 있을 때만 제거
+      if (_hasDestinationMarker) {
+        await _mapController?.deleteOverlay(
+            NOverlayInfo(type: NOverlayType.marker, id: _destinationMarkerId));
+      }
       final marker = NMarker(id: _destinationMarkerId, position: latLng);
       await _mapController?.addOverlay(marker);
+      _hasDestinationMarker = true;
 
       // 해당 위치로 카메라 이동
       await _mapController?.updateCamera(
@@ -50,7 +51,7 @@ class MapComponentState extends State<MapComponent> {
               duration: const Duration(milliseconds: 500)),
       );
 
-      if (mounted) _showPlaceDetailSheet(place, coord);
+      if (mounted) _showPlaceDetailSheet(place);
     } catch (e) {
       debugPrint('장소 포커스 실패: $e');
     }
@@ -93,21 +94,31 @@ class MapComponentState extends State<MapComponent> {
   /// 모든 마커/경로 초기화
   Future<void> clearMarkers() async {
     await _mapController?.clearOverlays();
+    _hasDestinationMarker = false;
   }
 
   /// 경로 폴리라인 그리기
   Future<void> drawRoute(
       List<CoordinateDto> route, CoordinateDto destination) async {
     // 기존 경로 레이어 제거
-    await _mapController?.deleteOverlay(
-        NOverlayInfo(type: NOverlayType.polylineOverlay, id: _routeOverlayId));
+    try {
+      await _mapController?.deleteOverlay(
+          NOverlayInfo(type: NOverlayType.polylineOverlay, id: _routeOverlayId));
+    } catch (_) {}
 
-    // 목적지 마커
+    // 목적지 마커 (기존 마커 있으면 제거 후 추가)
+    if (_hasDestinationMarker) {
+      try {
+        await _mapController?.deleteOverlay(
+            NOverlayInfo(type: NOverlayType.marker, id: _destinationMarkerId));
+      } catch (_) {}
+    }
     final destMarker = NMarker(
       id: _destinationMarkerId,
       position: NLatLng(destination.latitude, destination.longitude),
     );
     await _mapController?.addOverlay(destMarker);
+    _hasDestinationMarker = true;
 
     if (route.length < 2) return;
 
@@ -128,28 +139,13 @@ class MapComponentState extends State<MapComponent> {
     );
   }
 
-  void _showPlaceDetailSheet(Place place, CoordinateDto coordinate) {
+  void _showPlaceDetailSheet(Place place) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => _PlaceDetailSheet(
-        place: place,
-        onNavigate: () {
-          Navigator.pop(context);
-          RouteFinderModal.showModal(
-            context,
-            destinationName: place.placeName,
-            destinationNodeId: place.nodeId,
-            ramps: const [],
-            onGetCoordinate: (nodeId) =>
-                widget.navigationApi.getNodeCoordinates(nodeId),
-            onRouteDraw: (route, destination) =>
-                drawRoute(route, destination),
-          );
-        },
-      ),
+      builder: (context) => _PlaceDetailSheet(place: place),
     );
   }
 
@@ -158,8 +154,8 @@ class MapComponentState extends State<MapComponent> {
     return NaverMap(
       options: const NaverMapViewOptions(
         initialCameraPosition: NCameraPosition(
-          target: NLatLng(37.5666102, 126.9783881), // 기본: 서울 시청
-          zoom: 14,
+          target: NLatLng(37.5620, 126.9469), // 이화여자대학교
+          zoom: 16,
         ),
         locationButtonEnable: true,
         consumeSymbolTapEvents: false,
@@ -176,12 +172,8 @@ class MapComponentState extends State<MapComponent> {
 
 class _PlaceDetailSheet extends StatelessWidget {
   final Place place;
-  final VoidCallback onNavigate;
 
-  const _PlaceDetailSheet({
-    required this.place,
-    required this.onNavigate,
-  });
+  const _PlaceDetailSheet({required this.place});
 
   @override
   Widget build(BuildContext context) {
@@ -221,21 +213,21 @@ class _PlaceDetailSheet extends StatelessWidget {
               ),
             ],
           ),
-          if (place.alias.isNotEmpty) ...[
+          if (place.address.isNotEmpty) ...[
             const SizedBox(height: 8),
             Row(
               children: [
                 const Icon(Icons.location_on, size: 18, color: Colors.red),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: Text(place.alias,
+                  child: Text(place.address,
                       style: const TextStyle(fontSize: 14),
                       overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
           ],
-          if (place.contact.isNotEmpty && place.contact != '없음') ...[
+          if (place.contact.isNotEmpty) ...[
             const SizedBox(height: 6),
             Row(
               children: [
@@ -246,22 +238,6 @@ class _PlaceDetailSheet extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: onNavigate,
-              icon: const Icon(Icons.directions, color: Colors.white),
-              label: const Text('경로 안내',
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3478F6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-          ),
         ],
       ),
     );

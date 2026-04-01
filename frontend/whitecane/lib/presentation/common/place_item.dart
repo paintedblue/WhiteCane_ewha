@@ -56,7 +56,7 @@ class PlaceItem extends StatelessWidget {
                       const SizedBox(width: 4.0),
                       Flexible(
                         child: Text(
-                          place.alias,
+                          place.address,
                           style: const TextStyle(
                               fontSize: 14, color: Colors.black),
                           overflow: TextOverflow.ellipsis,

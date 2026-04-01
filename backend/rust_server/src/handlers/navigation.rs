@@ -1,5 +1,6 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Coordinate {
@@ -22,49 +23,63 @@ pub struct RouteResponse {
     pub warnings: Vec<String>,
 }
 
+/// 샘플 노드 좌표 맵 (node_id -> (latitude, longitude))
+fn node_coordinates() -> HashMap<&'static str, (f64, f64)> {
+    let mut map = HashMap::new();
+    map.insert("NODE_ECC",          (37.56237, 126.94700));
+    map.insert("NODE_LIBRARY",      (37.56360, 126.94780));
+    map.insert("NODE_STUDENT_HALL", (37.56310, 126.94740));
+    map.insert("NODE_POSCO",        (37.56280, 126.94810));
+    map.insert("NODE_SCIENCE",      (37.56350, 126.94830));
+    map.insert("NODE_CAFETERIA",    (37.56290, 126.94730));
+    map.insert("NODE_HEALTH",       (37.56300, 126.94760));
+    map.insert("NODE_MAIN_GATE",    (37.56170, 126.94690));
+    map
+}
+
 /// node_id로 포인트 좌표 조회
 ///
 /// GET /api/navigation/node_coordinates/{node_id}
-///
-/// TODO: 데이터베이스(PostGIS)에서 OSM 노드 좌표 조회로 교체
 #[get("/api/navigation/node_coordinates/{node_id}")]
 pub async fn get_node_coordinates(node_id: web::Path<String>) -> impl Responder {
     let node_id = node_id.into_inner();
     log::info!("노드 좌표 조회: {}", node_id);
 
-    // TODO: 데이터베이스에서 node_id에 해당하는 좌표 조회
-    // SELECT ST_Y(ST_Transform(way, 4326)) AS latitude,
-    //        ST_X(ST_Transform(way, 4326)) AS longitude
-    // FROM planet_osm_point WHERE osm_id = $1
-    HttpResponse::NotFound().json(serde_json::json!({
-        "error": "TODO: 데이터베이스 연동 후 구현"
-    }))
+    let coords = node_coordinates();
+    match coords.get(node_id.as_str()) {
+        Some(&(lat, lng)) => HttpResponse::Ok().json(serde_json::json!({
+            "latitude": lat,
+            "longitude": lng
+        })),
+        None => HttpResponse::NotFound().json(serde_json::json!({
+            "error": "노드를 찾을 수 없습니다."
+        })),
+    }
 }
 
 /// node_id로 건물 폴리곤 중심 좌표 조회
 ///
 /// GET /api/navigation/polygon_center/{node_id}
-///
-/// TODO: 데이터베이스(PostGIS)에서 건물 폴리곤 중심 계산으로 교체
 #[get("/api/navigation/polygon_center/{node_id}")]
 pub async fn get_polygon_center(node_id: web::Path<String>) -> impl Responder {
     let node_id = node_id.into_inner();
     log::info!("폴리곤 중심 조회: {}", node_id);
 
-    // TODO: 데이터베이스에서 건물 폴리곤 중심 계산
-    // SELECT ST_Y(ST_Centroid(ST_Transform(way, 4326))) AS latitude,
-    //        ST_X(ST_Centroid(ST_Transform(way, 4326))) AS longitude
-    // FROM planet_osm_polygon WHERE osm_id = $1
-    HttpResponse::NotFound().json(serde_json::json!({
-        "error": "TODO: 데이터베이스 연동 후 구현"
-    }))
+    let coords = node_coordinates();
+    match coords.get(node_id.as_str()) {
+        Some(&(lat, lng)) => HttpResponse::Ok().json(serde_json::json!({
+            "latitude": lat,
+            "longitude": lng
+        })),
+        None => HttpResponse::NotFound().json(serde_json::json!({
+            "error": "건물을 찾을 수 없습니다."
+        })),
+    }
 }
 
 /// 경로 계산 API
 ///
 /// POST /api/navigation/route
-///
-/// TODO: 경로 계산 엔진(Valhalla, OSRM 등) 연동으로 교체
 #[post("/api/navigation/route")]
 pub async fn calculate_route(body: web::Json<RouteRequest>) -> impl Responder {
     let request = body.into_inner();
@@ -76,12 +91,6 @@ pub async fn calculate_route(body: web::Json<RouteRequest>) -> impl Responder {
         request.end.longitude,
     );
 
-    // TODO: 경로 계산 엔진 연동
-    // - Valhalla: POST http://valhalla_server:8002/route
-    // - OSRM: GET http://osrm_server:5000/route/v1/...
-    // - 기타 라우팅 서버 연동
-    //
-    // 현재는 직선 경로(출발지->목적지)만 반환합니다.
     let mock_route = RouteResponse {
         duration: "0분".to_string(),
         distance: "0.0km".to_string(),
