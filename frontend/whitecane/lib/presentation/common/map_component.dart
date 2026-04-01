@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/data/remote/dto/navigation_dto.dart';
 import 'package:whitecane/domain/model/place.dart';
@@ -21,20 +24,67 @@ class MapComponent extends StatefulWidget {
 class MapComponentState extends State<MapComponent> {
   NaverMapController? _mapController;
   bool _hasDestinationMarker = false;
+  StreamSubscription<Position>? _locationSub;
+  bool _isFollowingUser = true;
 
   static const _routeOverlayId = 'route';
   static const _destinationMarkerId = 'destination';
 
   void _onMapReady(NaverMapController controller) {
     _mapController = controller;
+    _startLocationTracking();
+  }
+
+  Future<void> _startLocationTracking() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+    if (permission == LocationPermission.deniedForever) return;
+
+    // 현재 위치로 즉시 카메라 이동
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      _moveCameraTo(position);
+    } catch (e) {
+      debugPrint('현재 위치 조회 실패: $e');
+    }
+
+    // 위치 스트림 구독 (5m 이상 이동마다 업데이트)
+    _locationSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((position) {
+      if (_isFollowingUser) _moveCameraTo(position);
+    });
+  }
+
+  void _moveCameraTo(Position position) {
+    _mapController?.updateCamera(
+      NCameraUpdate.scrollAndZoomTo(
+        target: NLatLng(position.latitude, position.longitude),
+      ),
+    );
+  }
+
+  /// 팔로우 모드 재활성화 (외부에서 호출 가능)
+  void resumeFollowing() {
+    setState(() => _isFollowingUser = true);
   }
 
   /// 검색 결과에서 장소 선택 시 지도 포커스 및 상세 시트 표시
   Future<void> focusOnPlace(Place place) async {
+    setState(() => _isFollowingUser = false);
     try {
       final latLng = NLatLng(place.latitude, place.longitude);
 
-      // 기존 목적지 마커가 있을 때만 제거
       if (_hasDestinationMarker) {
         await _mapController?.deleteOverlay(
             NOverlayInfo(type: NOverlayType.marker, id: _destinationMarkerId));
@@ -43,7 +93,6 @@ class MapComponentState extends State<MapComponent> {
       await _mapController?.addOverlay(marker);
       _hasDestinationMarker = true;
 
-      // 해당 위치로 카메라 이동
       await _mapController?.updateCamera(
         NCameraUpdate.scrollAndZoomTo(target: latLng, zoom: 17)
           ..setAnimation(
@@ -100,13 +149,11 @@ class MapComponentState extends State<MapComponent> {
   /// 경로 폴리라인 그리기
   Future<void> drawRoute(
       List<CoordinateDto> route, CoordinateDto destination) async {
-    // 기존 경로 레이어 제거
     try {
       await _mapController?.deleteOverlay(
           NOverlayInfo(type: NOverlayType.polylineOverlay, id: _routeOverlayId));
     } catch (_) {}
 
-    // 목적지 마커 (기존 마커 있으면 제거 후 추가)
     if (_hasDestinationMarker) {
       try {
         await _mapController?.deleteOverlay(
@@ -132,7 +179,6 @@ class MapComponentState extends State<MapComponent> {
     );
     await _mapController?.addOverlay(polyline);
 
-    // 경로 전체가 보이도록 카메라 맞춤
     final bounds = NLatLngBounds.from(coords);
     await _mapController?.updateCamera(
       NCameraUpdate.fitBounds(bounds, padding: const EdgeInsets.all(60)),
@@ -150,6 +196,12 @@ class MapComponentState extends State<MapComponent> {
   }
 
   @override
+  void dispose() {
+    _locationSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return NaverMap(
       options: const NaverMapViewOptions(
@@ -164,6 +216,12 @@ class MapComponentState extends State<MapComponent> {
       ),
       onMapReady: _onMapReady,
       onMapTapped: (_, __) {},
+      onCameraChange: (reason, animated) {
+        // 사용자가 직접 드래그한 경우 팔로우 OFF
+        if (reason == NCameraUpdateReason.gesture) {
+          if (_isFollowingUser) setState(() => _isFollowingUser = false);
+        }
+      },
     );
   }
 }

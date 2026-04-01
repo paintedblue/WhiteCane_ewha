@@ -10,6 +10,7 @@
 |------|------|
 | 모바일 앱 | Flutter (Android) |
 | 지도 표시 | flutter_naver_map (Naver Maps SDK) |
+| 위치 추적 | geolocator |
 | 장소 검색 | Kakao Local Search REST API |
 | 백엔드 | Rust + Actix-web |
 | 상태 관리 | GetX |
@@ -88,6 +89,28 @@ API (Data / Remote)
 Rust Backend (/api/building)
     ↓ HTTP
 Kakao Local Search API
+```
+
+---
+
+## 현재 위치 실시간 추적
+
+`geolocator` 패키지를 사용해 GPS 위치를 실시간으로 수신하고 지도 카메라가 사용자를 따라갑니다.
+
+### 동작 방식
+
+- 앱 실행 시 위치 권한 요청
+- 권한 허용 후 현재 위치로 카메라 즉시 이동
+- 이후 5m 이상 이동할 때마다 카메라 자동 업데이트 (팔로우 ON)
+- 지도를 드래그하면 팔로우 OFF → 사용자가 원하는 곳을 자유롭게 탐색 가능
+- `MapComponentState.resumeFollowing()` 호출 시 팔로우 재활성화
+
+### 필요 권한 (AndroidManifest.xml)
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 ```
 
 ---
