@@ -17,6 +17,10 @@ dependencies:
   sizing: ^1.1.2
   flutter_dotenv: ^5.2.1
   geolocator: ^13.0.0
+  firebase_core: ^4.7.0
+  firebase_auth: ^6.4.0
+  cloud_firestore: ^6.3.0
+  firebase_database: ^12.3.0
 
 dev_dependencies:
   flutter_test:

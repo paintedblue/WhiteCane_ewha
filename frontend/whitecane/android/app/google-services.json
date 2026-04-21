@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "753144696264",
+    "project_id": "whitecane-26e05",
+    "storage_bucket": "whitecane-26e05.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:753144696264:android:82793b0dbc6de224e644fd",
+        "android_client_info": {
+          "package_name": "com.example.whitecane"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB-0C_TivAZdOf_1e5LtQW6jHeFiIFHdkQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

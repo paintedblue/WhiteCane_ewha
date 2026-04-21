@@ -1,4 +1,4 @@
-import 'package:whitecane/data/remote/api/building_api.dart';
+import 'package:whitecane/data/remote/api/naver_local_search_api.dart';
 import 'package:whitecane/domain/model/place.dart';
 
 abstract class PlaceRepository {
@@ -6,22 +6,11 @@ abstract class PlaceRepository {
 }
 
 class PlaceRepositoryImpl implements PlaceRepository {
-  final BuildingApi buildingApi;
+  final NaverLocalSearchApi naverLocalSearchApi;
 
-  PlaceRepositoryImpl({required this.buildingApi});
+  PlaceRepositoryImpl({required this.naverLocalSearchApi});
 
   @override
-  Future<List<Place>> searchByName(String name) async {
-    final results = await buildingApi.searchByName(name);
-    return results
-        .map((dto) => Place(
-              placeName: dto.name,
-              address: dto.address,
-              category: dto.category,
-              contact: dto.phoneNumber ?? '',
-              latitude: dto.latitude,
-              longitude: dto.longitude,
-            ))
-        .toList();
-  }
+  Future<List<Place>> searchByName(String name) =>
+      naverLocalSearchApi.search(name);
 }

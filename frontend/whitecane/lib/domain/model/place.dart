@@ -1,3 +1,5 @@
+import 'package:whitecane/domain/model/entrance.dart';
+
 class Place {
   final String placeName;
   final String address;
@@ -5,6 +7,7 @@ class Place {
   final String contact;
   final double latitude;
   final double longitude;
+  final List<Entrance> entrances;
 
   const Place({
     required this.placeName,
@@ -13,5 +16,6 @@ class Place {
     required this.contact,
     required this.latitude,
     required this.longitude,
+    this.entrances = const [],
   });
 }

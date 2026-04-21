@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:whitecane/data/remote/api/naver_directions_api.dart';
 import 'package:whitecane/data/remote/dto/navigation_dto.dart';
 import 'package:whitecane/presentation/theme/color.dart';
 
@@ -12,8 +13,10 @@ class RampInfo {
 
 class RouteFinderModal extends StatefulWidget {
   final String destinationName;
-  final String destinationNodeId;
+  final CoordinateDto destinationCoordinate;
   final List<RampInfo> ramps;
+  final NaverDirectionsApi directionsApi;
+  final Future<CoordinateDto?> Function() getCurrentPosition;
   final Future<CoordinateDto?> Function(String nodeId) onGetCoordinate;
   final void Function(List<CoordinateDto> route, CoordinateDto destination)
       onRouteDraw;
@@ -21,8 +24,10 @@ class RouteFinderModal extends StatefulWidget {
   const RouteFinderModal({
     super.key,
     required this.destinationName,
-    required this.destinationNodeId,
+    required this.destinationCoordinate,
     required this.ramps,
+    required this.directionsApi,
+    required this.getCurrentPosition,
     required this.onGetCoordinate,
     required this.onRouteDraw,
   });
@@ -30,8 +35,10 @@ class RouteFinderModal extends StatefulWidget {
   static Future<void> showModal(
     BuildContext context, {
     required String destinationName,
-    required String destinationNodeId,
+    required CoordinateDto destinationCoordinate,
     required List<RampInfo> ramps,
+    required NaverDirectionsApi directionsApi,
+    required Future<CoordinateDto?> Function() getCurrentPosition,
     required Future<CoordinateDto?> Function(String nodeId) onGetCoordinate,
     required void Function(List<CoordinateDto> route, CoordinateDto destination)
         onRouteDraw,
@@ -44,8 +51,10 @@ class RouteFinderModal extends StatefulWidget {
       ),
       builder: (context) => RouteFinderModal(
         destinationName: destinationName,
-        destinationNodeId: destinationNodeId,
+        destinationCoordinate: destinationCoordinate,
         ramps: ramps,
+        directionsApi: directionsApi,
+        getCurrentPosition: getCurrentPosition,
         onGetCoordinate: onGetCoordinate,
         onRouteDraw: onRouteDraw,
       ),
@@ -57,32 +66,18 @@ class RouteFinderModal extends StatefulWidget {
 }
 
 class _RouteFinderModalState extends State<RouteFinderModal> {
-  final TextEditingController _startController =
-      TextEditingController(text: '내 위치');
   String? _selectedRampNodeId;
   bool _isSecondStep = false;
   bool _isLoading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _startController.text = '내 위치';
-  }
-
-  @override
-  void dispose() {
-    _startController.dispose();
-    super.dispose();
-  }
+  bool get _hasRamps => widget.ramps.isNotEmpty;
 
   void _goToNextStep() {
-    setState(() {
-      _isSecondStep = true;
-    });
+    setState(() => _isSecondStep = true);
   }
 
   Future<void> _requestRoute() async {
-    if (_selectedRampNodeId == null) {
+    if (_hasRamps && _selectedRampNodeId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('진입 경로를 선택해주세요.')),
       );
@@ -92,19 +87,65 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
     setState(() => _isLoading = true);
 
     try {
-      final destination = await widget.onGetCoordinate(_selectedRampNodeId!);
-      if (destination == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('목적지 좌표를 가져올 수 없습니다.')),
-        );
+      // 현재 위치 조회
+      final currentPos = await widget.getCurrentPosition();
+      if (currentPos == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('현재 위치를 가져올 수 없습니다.')),
+          );
+        }
         return;
       }
 
-      // TODO: 실제 경로 계산 API 연동
-      // 현재는 빈 경로 리스트를 반환 (경로 알고리즘 미구현)
-      widget.onRouteDraw([], destination);
+      // 목적지 좌표 결정
+      CoordinateDto destination;
+      if (_selectedRampNodeId != null) {
+        final coord = await widget.onGetCoordinate(_selectedRampNodeId!);
+        if (coord == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('진입로 좌표를 가져올 수 없습니다.')),
+            );
+          }
+          return;
+        }
+        destination = coord;
+      } else {
+        destination = widget.destinationCoordinate;
+      }
 
-      if (mounted) Navigator.pop(context);
+      // 네이버 Directions 15 Walking API 호출
+      final result = await widget.directionsApi.getRoute(
+        startLat: currentPos.latitude,
+        startLng: currentPos.longitude,
+        goalLat: destination.latitude,
+        goalLng: destination.longitude,
+      );
+
+      if (result.code != 0 || result.route == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('경로를 찾을 수 없습니다: ${result.message}')),
+          );
+        }
+        return;
+      }
+
+      widget.onRouteDraw(result.route!.path, destination);
+
+      if (mounted) {
+        final summary = result.route!.summary;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '거리: ${_formatDistance(summary.distance)}  ·  '
+              '예상 시간: ${_formatDuration(summary.duration)}',
+            ),
+          ),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -114,6 +155,17 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _formatDistance(int meters) {
+    if (meters < 1000) return '${meters}m';
+    return '${(meters / 1000).toStringAsFixed(1)}km';
+  }
+
+  String _formatDuration(int ms) {
+    final minutes = ms ~/ 60000;
+    if (minutes < 60) return '$minutes분';
+    return '${minutes ~/ 60}시간 ${minutes % 60}분';
   }
 
   @override
@@ -134,10 +186,7 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
           children: [
             _buildHeader(context),
             const SizedBox(height: 16),
-            if (!_isSecondStep)
-              _buildRouteInputs()
-            else
-              _buildRampSelector(),
+            if (!_isSecondStep) _buildRouteInputs() else _buildRampSelector(),
             const SizedBox(height: 16),
             _buildActionButton(),
             const SizedBox(height: 24),
@@ -150,6 +199,11 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
   Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
+        if (_isSecondStep)
+          IconButton(
+            icon: const Icon(Icons.arrow_back, size: 24, color: Colors.grey),
+            onPressed: () => setState(() => _isSecondStep = false),
+          ),
         Expanded(
           child: Text(
             _isSecondStep ? '진입 경로 선택' : '경로 안내',
@@ -166,53 +220,56 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
 
   Widget _buildRouteInputs() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInputField(
+        _buildLocationField(
           icon: Icons.my_location,
-          controller: _startController,
-          hintText: '출발지',
+          text: '내 위치',
           isActive: false,
         ),
         const SizedBox(height: 8),
-        _buildInputField(
+        _buildLocationField(
           icon: Icons.location_on,
-          controller: TextEditingController(text: widget.destinationName),
-          hintText: '목적지',
+          text: widget.destinationName,
           isActive: true,
         ),
       ],
     );
   }
 
-  Widget _buildInputField({
+  Widget _buildLocationField({
     required IconData icon,
-    required TextEditingController controller,
-    required String hintText,
+    required String text,
     required bool isActive,
   }) {
-    return TextField(
-      controller: controller,
-      readOnly: true,
-      decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: isActive ? kButtonColor : Colors.grey),
-        hintText: hintText,
-        hintStyle: TextStyle(color: Colors.grey.shade400),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.grey.shade300),
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: isActive ? kButtonColor : Colors.grey, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: isActive ? Colors.black87 : Colors.grey,
+                fontSize: 15,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildRampSelector() {
-    if (widget.ramps.isEmpty) {
+    if (!_hasRamps) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16.0),
         child: Text(
@@ -246,8 +303,8 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
                     });
                   },
                   selectedColor: kButtonColor,
-                  labelStyle:
-                      TextStyle(color: isSelected ? Colors.white : Colors.black),
+                  labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black),
                 ),
               );
             }).toList(),
@@ -258,11 +315,12 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
   }
 
   Widget _buildActionButton() {
-    return Center(
+    final bool showNextButton = _hasRamps && !_isSecondStep;
+    return SizedBox(
+      width: double.infinity,
       child: ElevatedButton(
-        onPressed: _isLoading
-            ? null
-            : (_isSecondStep ? _requestRoute : _goToNextStep),
+        onPressed:
+            _isLoading ? null : (showNextButton ? _goToNextStep : _requestRoute),
         style: ElevatedButton.styleFrom(
           backgroundColor: kButtonColor,
           shape: RoundedRectangleBorder(
@@ -270,7 +328,7 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: _isLoading
               ? const SizedBox(
                   width: 20,
@@ -279,7 +337,7 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
                       color: Colors.white, strokeWidth: 2),
                 )
               : Text(
-                  _isSecondStep ? '경로 안내 시작' : '다음',
+                  showNextButton ? '다음' : '경로 안내 시작',
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
         ),

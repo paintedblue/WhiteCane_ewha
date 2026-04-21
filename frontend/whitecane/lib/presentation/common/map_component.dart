@@ -3,17 +3,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:whitecane/data/remote/api/naver_directions_api.dart';
 import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/data/remote/dto/navigation_dto.dart';
 import 'package:whitecane/domain/model/place.dart';
+import 'package:whitecane/presentation/common/route_finder_modal.dart';
+import 'package:whitecane/presentation/indoor/indoor_navigation_sheet.dart';
+import 'package:whitecane/presentation/theme/color.dart';
 
 class MapComponent extends StatefulWidget {
   final NavigationApi navigationApi;
+  final NaverDirectionsApi directionsApi;
   final String baseUrl;
 
   const MapComponent({
     super.key,
     required this.navigationApi,
+    required this.directionsApi,
     required this.baseUrl,
   });
 
@@ -26,6 +32,7 @@ class MapComponentState extends State<MapComponent> {
   bool _hasDestinationMarker = false;
   StreamSubscription<Position>? _locationSub;
   bool _isFollowingUser = true;
+  Position? _currentPosition;
 
   static const _routeOverlayId = 'route';
   static const _destinationMarkerId = 'destination';
@@ -50,6 +57,7 @@ class MapComponentState extends State<MapComponent> {
           accuracy: LocationAccuracy.high,
         ),
       );
+      _currentPosition = position;
       _moveCameraTo(position);
     } catch (e) {
       debugPrint('현재 위치 조회 실패: $e');
@@ -62,6 +70,7 @@ class MapComponentState extends State<MapComponent> {
         distanceFilter: 5,
       ),
     ).listen((position) {
+      _currentPosition = position;
       if (_isFollowingUser) _moveCameraTo(position);
     });
   }
@@ -185,13 +194,36 @@ class MapComponentState extends State<MapComponent> {
     );
   }
 
+  CoordinateDto? _getCurrentCoordinate() {
+    if (_currentPosition == null) return null;
+    return CoordinateDto(
+      latitude: _currentPosition!.latitude,
+      longitude: _currentPosition!.longitude,
+    );
+  }
+
   void _showPlaceDetailSheet(Place place) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => _PlaceDetailSheet(place: place),
+      builder: (sheetContext) => _PlaceDetailSheet(
+        place: place,
+        directionsApi: widget.directionsApi,
+        getCurrentPosition: () async => _getCurrentCoordinate(),
+        onGetCoordinate: (nodeId) async {
+          try {
+            return await widget.navigationApi.getNodeCoordinates(nodeId);
+          } catch (_) {
+            return null;
+          }
+        },
+        onRouteDrawn: (route, destination) {
+          drawRoute(route, destination);
+          Navigator.of(sheetContext).pop();
+        },
+      ),
     );
   }
 
@@ -230,8 +262,19 @@ class MapComponentState extends State<MapComponent> {
 
 class _PlaceDetailSheet extends StatelessWidget {
   final Place place;
+  final NaverDirectionsApi directionsApi;
+  final Future<CoordinateDto?> Function() getCurrentPosition;
+  final Future<CoordinateDto?> Function(String nodeId) onGetCoordinate;
+  final void Function(List<CoordinateDto> route, CoordinateDto destination)
+      onRouteDrawn;
 
-  const _PlaceDetailSheet({required this.place});
+  const _PlaceDetailSheet({
+    required this.place,
+    required this.directionsApi,
+    required this.getCurrentPosition,
+    required this.onGetCoordinate,
+    required this.onRouteDrawn,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -296,6 +339,74 @@ class _PlaceDetailSheet extends StatelessWidget {
               ],
             ),
           ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              // ── 실외 경로 안내 ──────────────────────────────────
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    RouteFinderModal.showModal(
+                      context,
+                      destinationName: place.placeName,
+                      destinationCoordinate: CoordinateDto(
+                        latitude: place.latitude,
+                        longitude: place.longitude,
+                      ),
+                      ramps: place.entrances
+                          .map((e) => RampInfo(
+                                nodeId: e.nodeId,
+                                locationDescription: e.description,
+                              ))
+                          .toList(),
+                      directionsApi: directionsApi,
+                      getCurrentPosition: getCurrentPosition,
+                      onGetCoordinate: onGetCoordinate,
+                      onRouteDraw: onRouteDrawn,
+                    );
+                  },
+                  icon: const Icon(Icons.directions, color: Colors.white,
+                      size: 18),
+                  label: const Text(
+                    '실외 경로',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kButtonColor,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // ── 실내 경로 안내 ──────────────────────────────────
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    IndoorNavigationSheet.showSheet(
+                      context,
+                      buildingName: place.placeName,
+                    );
+                  },
+                  icon: const Icon(Icons.maps_home_work, color: Colors.white,
+                      size: 18),
+                  label: const Text(
+                    '실내 경로',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF5856D6),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

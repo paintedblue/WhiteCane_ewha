@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:get/get.dart';
+import 'package:whitecane/data/remote/api/naver_directions_api.dart';
 import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/presentation/common/custom_search_bar.dart';
 import 'package:whitecane/presentation/common/map_component.dart';
@@ -16,6 +17,7 @@ class MapPage extends StatefulWidget {
 
 class _MapPageState extends State<MapPage> {
   late final NavigationApi _navigationApi;
+  late final NaverDirectionsApi _directionsApi;
   late final String _baseUrl;
 
   final GlobalKey<MapComponentState> _mapComponentKey =
@@ -26,6 +28,11 @@ class _MapPageState extends State<MapPage> {
     super.initState();
     _baseUrl = dotenv.env['SERVER_URL'] ?? 'http://localhost:8000/';
     _navigationApi = NavigationApi(Dio(), baseUrl: _baseUrl);
+    _directionsApi = NaverDirectionsApi(
+      Dio(),
+      clientId: dotenv.env['NAVER_DIRECTIONS_CLIENT_ID'] ?? '',
+      clientSecret: dotenv.env['NAVER_DIRECTIONS_CLIENT_SECRET'] ?? '',
+    );
   }
 
   @override
@@ -37,6 +44,7 @@ class _MapPageState extends State<MapPage> {
           MapComponent(
             key: _mapComponentKey,
             navigationApi: _navigationApi,
+            directionsApi: _directionsApi,
             baseUrl: _baseUrl,
           ),
 

@@ -32,19 +32,24 @@ class PlaceItem extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        place.placeName,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
+                      Flexible(
+                        child: Text(
+                          place.placeName,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8.0),
-                      Text(
-                        place.category,
-                        style:
-                            const TextStyle(fontSize: 12, color: Colors.grey),
+                      Flexible(
+                        child: Text(
+                          place.category,
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
