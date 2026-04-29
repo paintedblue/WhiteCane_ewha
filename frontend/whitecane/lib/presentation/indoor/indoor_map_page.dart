@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:whitecane/domain/model/indoor_room.dart';
 import 'package:whitecane/presentation/theme/color.dart';
 
 class IndoorMapPage extends StatelessWidget {
   final String buildingName;
+
+  /// 목적지 방 정보. null이면 좌표만 사용.
+  final IndoorRoom? destinationRoom;
+
   final double startX;
   final double startY;
   final double endX;
@@ -11,6 +16,7 @@ class IndoorMapPage extends StatelessWidget {
   const IndoorMapPage({
     super.key,
     required this.buildingName,
+    this.destinationRoom,
     required this.startX,
     required this.startY,
     required this.endX,
@@ -19,6 +25,9 @@ class IndoorMapPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final destLabel =
+        destinationRoom?.displayName ?? '($endX, $endY)';
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -39,27 +48,28 @@ class IndoorMapPage extends StatelessWidget {
                   color: Colors.black87),
             ),
             Text(
-              buildingName,
-              style:
-                  const TextStyle(fontSize: 12, color: Colors.grey),
+              destinationRoom != null
+                  ? '$buildingName · ${destinationRoom!.displayName}'
+                  : buildingName,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
         ),
       ),
       body: Column(
         children: [
-          // ── 실내 지도 영역 ─────────────────────────────────────
           Expanded(
             child: _IndoorMapView(
               startX: startX,
               startY: startY,
               endX: endX,
               endY: endY,
+              destinationLabel: destLabel,
             ),
           ),
-
-          // ── 하단 경로 정보 카드 ────────────────────────────────
           _RouteInfoCard(
+            buildingName: buildingName,
+            destinationRoom: destinationRoom,
             startX: startX,
             startY: startY,
             endX: endX,
@@ -78,12 +88,14 @@ class _IndoorMapView extends StatelessWidget {
   final double startY;
   final double endX;
   final double endY;
+  final String destinationLabel;
 
   const _IndoorMapView({
     required this.startX,
     required this.startY,
     required this.endX,
     required this.endY,
+    required this.destinationLabel,
   });
 
   @override
@@ -99,14 +111,11 @@ class _IndoorMapView extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Stack(
           children: [
-            // 그리드 배경 (조감도 자리)
             Positioned.fill(
               child: CustomPaint(
                 painter: _FloorPlanPlaceholderPainter(),
               ),
             ),
-
-            // 경로 + 마커 (좌표 스케일 기반)
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -116,6 +125,7 @@ class _IndoorMapView extends StatelessWidget {
                       startY: startY,
                       endX: endX,
                       endY: endY,
+                      destinationLabel: destinationLabel,
                       canvasSize: Size(
                           constraints.maxWidth, constraints.maxHeight),
                     ),
@@ -178,16 +188,13 @@ class _FloorPlanPlaceholderPainter extends CustomPainter {
 
     const spacing = 40.0;
 
-    // 세로선
     for (double x = spacing; x < size.width; x += spacing) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
     }
-    // 가로선
     for (double y = spacing; y < size.height; y += spacing) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
-    // 방 구획 예시 (추후 실제 도면으로 교체)
     final roomPaint = Paint()
       ..color = Colors.grey.shade300
       ..strokeWidth = 2
@@ -219,6 +226,7 @@ class _RouteMarkerPainter extends CustomPainter {
   final double startY;
   final double endX;
   final double endY;
+  final String destinationLabel;
   final Size canvasSize;
 
   _RouteMarkerPainter({
@@ -226,10 +234,10 @@ class _RouteMarkerPainter extends CustomPainter {
     required this.startY,
     required this.endX,
     required this.endY,
+    required this.destinationLabel,
     required this.canvasSize,
   });
 
-  // 입력 좌표를 캔버스 좌표로 변환 (패딩 40 적용)
   Offset _toCanvas(double x, double y, double minX, double maxX, double minY,
       double maxY) {
     const padding = 60.0;
@@ -253,21 +261,16 @@ class _RouteMarkerPainter extends CustomPainter {
     final startOffset = _toCanvas(startX, startY, minX, maxX, minY, maxY);
     final endOffset = _toCanvas(endX, endY, minX, maxX, minY, maxY);
 
-    // 점선 경로
     final routePaint = Paint()
       ..color = kButtonColor
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
 
     _drawDashedLine(canvas, startOffset, endOffset, routePaint);
-
-    // 출발 마커 (초록 원)
     _drawMarker(canvas, startOffset,
-        fillColor: const Color(0xFF34C759), label: '출발');
-
-    // 도착 마커 (주황 원)
+        fillColor: const Color(0xFF34C759), label: '입구');
     _drawMarker(canvas, endOffset,
-        fillColor: kButtonColor, label: '도착');
+        fillColor: kButtonColor, label: destinationLabel);
   }
 
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
@@ -299,37 +302,38 @@ class _RouteMarkerPainter extends CustomPainter {
 
   void _drawMarker(Canvas canvas, Offset center,
       {required Color fillColor, required String label}) {
-    const radius = 14.0;
+    const radius = 18.0;
 
-    // 그림자
     final shadowPaint = Paint()
       ..color = Colors.black.withAlpha(40)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
 
-    // 원 배경
     final circlePaint = Paint()..color = fillColor;
     canvas.drawCircle(center, radius, circlePaint);
 
-    // 흰 테두리
     final borderPaint = Paint()
       ..color = Colors.white
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     canvas.drawCircle(center, radius, borderPaint);
 
-    // 레이블
+    // 레이블 (방 번호가 길면 두 줄로 처리)
+    final displayLabel =
+        label.length > 4 ? label.replaceAll('호', '\n호') : label;
+
     final textPainter = TextPainter(
       text: TextSpan(
-        text: label,
+        text: displayLabel,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: FontWeight.bold,
         ),
       ),
+      textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
-    )..layout();
+    )..layout(maxWidth: radius * 2);
     textPainter.paint(
       canvas,
       center - Offset(textPainter.width / 2, textPainter.height / 2),
@@ -362,9 +366,9 @@ class _Legend extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _legendItem(color: const Color(0xFF34C759), label: '출발'),
+          _legendItem(color: const Color(0xFF34C759), label: '건물 입구'),
           const SizedBox(height: 4),
-          _legendItem(color: kButtonColor, label: '도착'),
+          _legendItem(color: kButtonColor, label: '목적지'),
           const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -402,23 +406,27 @@ class _Legend extends StatelessWidget {
 // ── 하단 경로 정보 카드 ───────────────────────────────────────────────────────
 
 class _RouteInfoCard extends StatelessWidget {
+  final String buildingName;
+  final IndoorRoom? destinationRoom;
   final double startX;
   final double startY;
   final double endX;
   final double endY;
 
   const _RouteInfoCard({
+    required this.buildingName,
+    required this.destinationRoom,
     required this.startX,
     required this.startY,
     required this.endX,
     required this.endY,
   });
 
-  String _fmt(double v) =>
-      v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
-
   @override
   Widget build(BuildContext context) {
+    final destLabel = destinationRoom?.displayName ??
+        '(${_fmt(endX)}, ${_fmt(endY)})';
+
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
       decoration: BoxDecoration(
@@ -438,22 +446,21 @@ class _RouteInfoCard extends StatelessWidget {
           // 출발 → 도착
           Row(
             children: [
-              _coordChip(
+              _routeChip(
                 icon: Icons.trip_origin,
                 iconColor: const Color(0xFF34C759),
                 label: '출발',
-                coord: '(${_fmt(startX)}, ${_fmt(startY)})',
+                value: '건물 입구',
               ),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Icon(Icons.arrow_forward,
-                    size: 16, color: Colors.grey),
+                child: Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
               ),
-              _coordChip(
+              _routeChip(
                 icon: Icons.location_on,
                 iconColor: kButtonColor,
                 label: '도착',
-                coord: '(${_fmt(endX)}, ${_fmt(endY)})',
+                value: destLabel,
               ),
             ],
           ),
@@ -488,11 +495,14 @@ class _RouteInfoCard extends StatelessWidget {
     );
   }
 
-  Widget _coordChip({
+  String _fmt(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
+  Widget _routeChip({
     required IconData icon,
     required Color iconColor,
     required String label,
-    required String coord,
+    required String value,
   }) {
     return Expanded(
       child: Row(
@@ -504,10 +514,9 @@ class _RouteInfoCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(
-                        fontSize: 11, color: Colors.grey)),
+                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
                 Text(
-                  coord,
+                  value,
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,

@@ -1,42 +1,72 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:whitecane/data/remote/dto/directions_dto.dart';
 
+enum TransportMode { walking, car }
+
+/// 이동 수단에 따라 OSRM(도보) / Kakao Mobility(자동차) API를 분기
 class NaverDirectionsApi {
   final Dio _dio;
-  final String _clientId;
-  final String _clientSecret;
+  final String _kakaoApiKey;
 
-  static const String _url =
-      'https://naveropenapi.apigw.ntruss.com/map-direction-15/walking';
+  static const _osrmUrl = 'https://router.project-osrm.org/route/v1/foot';
+  static const _kakaoCarUrl =
+      'https://apis-navi.kakaomobility.com/v1/directions';
 
   NaverDirectionsApi(
     this._dio, {
-    required String clientId,
-    required String clientSecret,
-  })  : _clientId = clientId,
-        _clientSecret = clientSecret;
+    String clientId = '',
+    String clientSecret = '',
+    String kakaoApiKey = '',
+  }) : _kakaoApiKey = kakaoApiKey;
 
-  /// 보행자 경로 조회 (Directions 15 Walking)
   Future<DirectionsResponseDto> getRoute({
     required double startLat,
     required double startLng,
     required double goalLat,
     required double goalLng,
+    TransportMode mode = TransportMode.walking,
   }) async {
+    return mode == TransportMode.walking
+        ? _osrmWalking(startLat, startLng, goalLat, goalLng)
+        : _kakaoCar(startLat, startLng, goalLat, goalLng);
+  }
+
+  Future<DirectionsResponseDto> _osrmWalking(
+      double startLat, double startLng, double goalLat, double goalLng) async {
+    final url = '$_osrmUrl/$startLng,$startLat;$goalLng,$goalLat';
     final response = await _dio.get(
-      _url,
+      url,
+      queryParameters: {'overview': 'full', 'geometries': 'geojson'},
+      options: Options(validateStatus: (s) => s != null),
+    );
+    debugPrint('[OSRM walking] status=${response.statusCode}');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      return const DirectionsResponseDto(code: -1, message: '잘못된 응답');
+    }
+    return DirectionsResponseDto.fromOsrmJson(data);
+  }
+
+  Future<DirectionsResponseDto> _kakaoCar(
+      double startLat, double startLng, double goalLat, double goalLng) async {
+    final response = await _dio.get(
+      _kakaoCarUrl,
       queryParameters: {
-        'start': '$startLng,$startLat', // Directions API는 경도,위도 순
-        'goal': '$goalLng,$goalLat',
+        'origin': '$startLng,$startLat',
+        'destination': '$goalLng,$goalLat',
+        'priority': 'RECOMMEND',
       },
       options: Options(
-        headers: {
-          'x-ncp-apigw-api-key-id': _clientId,
-          'x-ncp-apigw-api-key': _clientSecret,
-        },
+        headers: {'Authorization': 'KakaoAK $_kakaoApiKey'},
+        validateStatus: (s) => s != null,
       ),
     );
-    return DirectionsResponseDto.fromJson(
-        response.data as Map<String, dynamic>);
+    debugPrint('[Kakao car] status=${response.statusCode}');
+    final data = response.data;
+    if (data is! Map<String, dynamic>) {
+      return const DirectionsResponseDto(code: -1, message: '잘못된 응답');
+    }
+    return DirectionsResponseDto.fromKakaoJson(data);
   }
 }

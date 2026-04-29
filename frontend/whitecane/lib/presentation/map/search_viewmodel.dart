@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:whitecane/data/local/mock_building_data.dart';
 import 'package:whitecane/domain/model/place.dart';
 import 'package:whitecane/domain/usecase/search_places_usecase.dart';
 
@@ -22,14 +23,21 @@ class SearchViewModel extends GetxController {
       return;
     }
 
+    // 로컬 건물 데이터에서 먼저 매칭 (네이버 결과 앞에 노출)
+    final localResults = MockBuildingData.getMatchingBuildings(query);
+
     _isLoading.value = true;
     _error.value = '';
 
     try {
-      final results = await _searchPlacesUseCase.execute(query);
-      _places.assignAll(results);
+      final remoteResults = await _searchPlacesUseCase.execute(query);
+      _places.assignAll([...localResults, ...remoteResults]);
     } catch (e) {
-      _error.value = '검색 중 오류 발생: ${e.toString()}';
+      // 네트워크 오류 시에도 로컬 결과는 표시
+      _places.assignAll(localResults);
+      if (localResults.isEmpty) {
+        _error.value = '검색 중 오류 발생: ${e.toString()}';
+      }
     } finally {
       _isLoading.value = false;
     }

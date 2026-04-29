@@ -125,8 +125,9 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
 
       if (result.code != 0 || result.route == null) {
         if (mounted) {
+          final msg = _friendlyErrorMessage(result.code, result.message);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('경로를 찾을 수 없습니다: ${result.message}')),
+            SnackBar(content: Text(msg)),
           );
         }
         return;
@@ -149,11 +150,24 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('경로 요청 실패: $e')),
+          const SnackBar(content: Text('경로를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.')),
         );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _friendlyErrorMessage(int code, String raw) {
+    switch (code) {
+      case 1:
+        return '출발지와 목적지가 너무 가깝습니다.';
+      case 2:
+        return '해당 경로를 찾을 수 없습니다.';
+      case 3:
+        return '위치 좌표에 오류가 있습니다.';
+      default:
+        return '경로를 찾을 수 없습니다. (코드: $code)';
     }
   }
 
@@ -258,7 +272,8 @@ class _RouteFinderModalState extends State<RouteFinderModal> {
               text,
               style: TextStyle(
                 color: isActive ? Colors.black87 : Colors.grey,
-                fontSize: 15,
+                fontSize: isActive ? 18 : 15,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.normal,
               ),
               overflow: TextOverflow.ellipsis,
             ),

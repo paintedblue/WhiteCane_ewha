@@ -32,6 +32,7 @@ class _MapPageState extends State<MapPage> {
       Dio(),
       clientId: dotenv.env['NAVER_DIRECTIONS_CLIENT_ID'] ?? '',
       clientSecret: dotenv.env['NAVER_DIRECTIONS_CLIENT_SECRET'] ?? '',
+      kakaoApiKey: dotenv.env['KAKAO_REST_API_KEY'] ?? '',
     );
   }
 
@@ -59,6 +60,23 @@ class _MapPageState extends State<MapPage> {
               onTap: () {
                 Get.to(() => SearchPage(mapComponentKey: _mapComponentKey));
               },
+            ),
+          ),
+
+          // ── [테스트] ECC 위치로 텔레포트 버튼 ──────────────────────
+          Positioned(
+            top: 120.0,
+            right: 16.0,
+            child: FloatingActionButton.small(
+              heroTag: 'debugEcc',
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              tooltip: 'ECC로 위치 이동 (테스트)',
+              onPressed: () {
+                _mapComponentKey.currentState
+                    ?.debugSetPosition(37.56217, 126.94618);
+              },
+              child: const Text('ECC', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
             ),
           ),
         ],

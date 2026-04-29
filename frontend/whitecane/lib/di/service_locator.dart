@@ -6,6 +6,7 @@ import 'package:whitecane/data/remote/api/navigation_api.dart';
 import 'package:whitecane/domain/repository/place_repository.dart';
 import 'package:whitecane/domain/usecase/search_places_usecase.dart';
 import 'package:whitecane/presentation/map/search_viewmodel.dart';
+import 'package:whitecane/presentation/settings/settings_viewmodel.dart';
 
 final GetIt getIt = GetIt.instance;
 
@@ -31,5 +32,8 @@ void setupDependencies() {
   );
   getIt.registerLazySingleton<SearchViewModel>(
     () => SearchViewModel(searchPlacesUseCase: getIt<SearchPlacesUseCase>()),
+  );
+  getIt.registerLazySingleton<SettingsViewModel>(
+    () => SettingsViewModel(),
   );
 }

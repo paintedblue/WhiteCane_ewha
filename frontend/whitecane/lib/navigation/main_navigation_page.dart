@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'package:whitecane/presentation/map/map_page.dart';
+import 'package:whitecane/presentation/settings/settings_page.dart';
 import 'package:whitecane/presentation/theme/color.dart';
 
 class MainNavigationPage extends StatefulWidget {
@@ -16,7 +17,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   final List<Widget> _pages = [
     const MapPage(),
     const _PlaceholderPage(title: '저장된 장소'),
-    const _PlaceholderPage(title: '설정'),
+    const SettingsPage(),
   ];
 
   @override
